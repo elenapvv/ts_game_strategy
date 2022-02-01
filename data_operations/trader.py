@@ -4,6 +4,7 @@ import os
 
 from algs.hedge import Hedge
 from utils.manager_db import DATE_TMPL, SharesDB
+from progress.bar import IncrementalBar
 
 logs_filename = f'../results/ETA={Hedge.ETA}, time={datetime.datetime.now().strftime("%d.%m.%Y %H.%M.%S")}.log'
 
@@ -29,6 +30,7 @@ if __name__ == '__main__':
     shares_num = len(columns) - 2
     weights = [1 / shares_num for _ in range(shares_num)]
     expert_losses = [0 for _ in range(shares_num)]
+    number_of_shares = [1 for _ in range(shares_num)]
 
     considered_date = MIN_DATE
     old_time_step_shares = SharesDB.get_shares_by_date(date=considered_date)
@@ -39,10 +41,12 @@ if __name__ == '__main__':
 
     logger.info(f"ETA={Hedge.ETA}")
 
+    bar = IncrementalBar('Выполнение...', max=(MAX_DATE - MIN_DATE).days)
+
     while considered_date < MAX_DATE:
         new_time_step_shares = SharesDB.get_shares_by_date(date=considered_date)
-        expert_losses = [new_time_step_shares[share_idx] - old_time_step_shares[share_idx] for share_idx in
-                         range(shares_num)]
+        expert_losses = [number_of_shares[share_idx] * (new_time_step_shares[share_idx] - old_time_step_shares[share_idx]) for
+                         share_idx in range(shares_num)]
 
         alg_loss, weights = Hedge.calculate_new_weights(old_weights=weights, shares=new_time_step_shares,
                                                         expert_losses=expert_losses)
@@ -56,6 +60,10 @@ if __name__ == '__main__':
         considered_date = considered_date + datetime.timedelta(days=1)
         old_time_step_shares = new_time_step_shares
         step += 1
+
+        bar.next()
+
+    bar.finish()
 
     log_text = f"Кумулятивные потери алгоритма Hedge для ETA={Hedge.ETA}: {cumulative_loss}"
     logger.info(log_text)

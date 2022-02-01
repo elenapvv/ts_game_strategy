@@ -1,13 +1,12 @@
 import logging
-import traceback
 
-from math import exp
+from math import exp, isinf
 
 logger = logging.getLogger(__name__)
 
 
 class Hedge:
-    ETA = 0.001
+    ETA = 0.001  # оптимально
 
     @classmethod
     def calculate_new_weights(cls, old_weights: list, shares: tuple, expert_losses: list):
@@ -17,9 +16,16 @@ class Hedge:
             exit()
 
         old_weights_sum = sum(old_weights)
+        if isinf(old_weights_sum):
+            logger.error("Сумма весов равна бесконечности")
+            exit()
+
         old_weights_normalized = [old_weight / old_weights_sum for old_weight in old_weights]
 
         alg_loss = sum([old_weights_normalized[i] * expert_losses[i] for i in range(len(shares))])
+
+        logger.debug(f"alg_loss={alg_loss},\nold_weights_sum={old_weights_sum},\n"
+                     f"old_weights_normalized={old_weights_normalized},\nold_weights={old_weights}")
 
         new_weights = []
         try:
