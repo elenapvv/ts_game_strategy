@@ -25,7 +25,8 @@ class Hedge:
         alg_loss = sum([old_weights_normalized[i] * expert_losses[i] for i in range(len(shares))])
 
         logger.debug(f"alg_loss={alg_loss},\nold_weights_sum={old_weights_sum},\n"
-                     f"old_weights_normalized={old_weights_normalized},\nold_weights={old_weights}")
+                     f"old_weights_normalized={old_weights_normalized},\nold_weights={old_weights}"
+                     f"\nexpert_losses={expert_losses}")
 
         new_weights = []
         try:
