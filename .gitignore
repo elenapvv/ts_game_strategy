@@ -1,3 +1,7 @@
-.idea
 pgdata
+.idea
+.idea/*
 venv
+venv/*
+__pychache__
+__pychache__/*
