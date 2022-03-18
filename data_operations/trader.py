@@ -13,18 +13,23 @@ logging.basicConfig(
     level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TO_SAVE_LOGS = False
+TO_SAVE_LOGS = True
 TO_SAVE_PLOTS = True
 
 # можем тут переопределить параметр эта
-Algorithms.ETA = 0.00001
+Algorithms.ETA = 0.0001
+
+
+def get_eta_coef():
+    return 0.95
+
 
 CASH = 10000
 
 # названия файлов и директорий
-filename = f'cumulative gains for all tickers and common(ETA={Algorithms.ETA})'
+subdir_name = 'hedge with variable param - 12/'
 
-subdir_name = 'cumulative gains for all tickers and common - 11/'
+filename = f'hedge with variable param (initial ETA={Algorithms.ETA}, ETA_COEF={get_eta_coef()})'
 
 logs_dir = f'../results/{subdir_name}'
 plots_dir = f'../plots/{subdir_name}'
@@ -75,6 +80,7 @@ if __name__ == '__main__':
     shares_num = len(columns)
     weights = [1 / shares_num for _ in range(shares_num)]
     expert_gaines = [0 for _ in range(shares_num)]
+    cumulative_expert_gaines = [0 for _ in range(shares_num)]
     general_cash_list = [CASH, ]
 
     considered_date = MIN_DATE
@@ -92,11 +98,13 @@ if __name__ == '__main__':
     number_of_shares_lists = [[number_of_share, ] for _ in range(shares_num)]
 
     step = 1
-    cumulative_loss = 0
+    cumulative_gain = 0
+    old_alg_gain = 0
     alg_gains = []
     alg_gains_for_shares_list = [[number_of_share * weights[0], ] for _ in range(shares_num)]
+    eta = Algorithms.ETA
 
-    logger.info(f"ETA={Algorithms.ETA}")
+    logger.info(f"ETA={eta}")
 
     bar = IncrementalBar('Выполнение...', max=(MAX_DATE - MIN_DATE).days)
 
@@ -106,18 +114,25 @@ if __name__ == '__main__':
         expert_gaines = [number_of_shares[share_idx] * (new_time_step_shares[share_idx] -
                                                         old_time_step_shares[share_idx]) for share_idx
                          in range(shares_num)]
+        cumulative_expert_gaines = [cumulative_expert_gaines[share_idx] + expert_gaines[share_idx] for share_idx
+                                    in range(shares_num)]
 
-        alg_gains_for_shares, weights = Algorithms.hedge(old_weights=weights, shares=new_time_step_shares,
-                                                         expert_gaines=expert_gaines)
+        alg_gains_for_shares, weights = Algorithms.hedge_with_variable_param(old_weights=weights,
+                                                                             shares=new_time_step_shares,
+                                                                             expert_gaines=expert_gaines,
+                                                                             cumulative_expert_gaines=cumulative_expert_gaines,
+                                                                             eta=eta)
 
         alg_gain = sum(alg_gains_for_shares)
         log_text = f"Выигрыш алгоритма Hedge на шаге {step} ({considered_date}): {alg_gain}"
         logger.debug(log_text)
-        cumulative_loss += alg_gain
-        # if TO_SAVE_LOGS:
-        #     with open(logs_filename, 'a+') as f:
-        #         f.write(f"{log_text}, всего: {cumulative_loss}\n")
-        alg_gains.append(cumulative_loss)
+        eta = eta * get_eta_coef()
+        old_alg_gain = alg_gain
+        cumulative_gain += alg_gain
+        if TO_SAVE_LOGS:
+            with open(logs_filename, 'a+') as f:
+                f.write(f"{log_text}, всего: {cumulative_gain}, eta: {eta}\n")
+        alg_gains.append(cumulative_gain)
         for share_idx in range(shares_num):
             alg_gains_for_shares_list[share_idx].append(
                 alg_gains_for_shares_list[share_idx][-1] + alg_gains_for_shares[share_idx])
@@ -142,7 +157,7 @@ if __name__ == '__main__':
 
     bar.finish()
 
-    log_text = f"Кумулятивные выигрыши алгоритма Hedge для ETA={Algorithms.ETA}: {cumulative_loss}"
+    log_text = f"Кумулятивные выигрыши алгоритма Hedge для ETA={Algorithms.ETA}: {cumulative_gain}"
     logger.info(log_text)
 
     if TO_SAVE_LOGS:
