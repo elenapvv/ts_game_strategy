@@ -132,31 +132,23 @@ class Algorithms:
         except Exception:
             raise
 
-        mixgain = - 1 / eta * math.log(sum([old_weights[i] * exp(eta * expert_gaines[i]) for i in range(shares_len)]))
-        small_delta = alg_gain - mixgain
+        mixgain = 1 / eta * math.log(sum([old_weights[i] * exp(eta * expert_gaines[i]) for i in range(shares_len)]))
+        small_delta = mixgain - alg_gain
         new_big_delta = old_big_delta + small_delta
         new_eta = 1 / new_big_delta
 
-        logger.debug(f"mixgain={mixgain}")
-
-        # if mixgain > alg_gain:
-        #     logger.error(f"mixgain > alg_gain! mixgain={mixgain}, alg_gain={alg_gain}")
-        #     exit()
+        if mixgain < alg_gain:
+            logger.error(f"mixgain < alg_gain! mixgain={mixgain}, alg_gain={alg_gain}")
+            exit()
 
         return new_weights, new_big_delta, new_eta, alg_gain, alg_gains_for_shares, weights_mu
 
     @classmethod
-    def fixed_share_from_conf_hedge(cls, eta, time_step, old_weights: list, shares_len: int, expert_gaines: list,
-                                    old_big_delta,
-                                    weights_mu: list):
+    def fixed_share_with_variable_param(cls, eta, time_step, old_weights: list, shares_len: int, expert_gaines: list,
+                                        old_big_delta):
         if not (len(old_weights) == shares_len == len(expert_gaines)):
             logger.error(f"Переданы списки разной длины\nold_weights = {old_weights}, shares_len = {shares_len}, "
                          f"expert_gaines = {expert_gaines}")
-            exit()
-
-        if not (time_step == len(weights_mu[0])):
-            logger.error(f"Переданы параметры разной длины\n"
-                         f"time_step = {time_step}, len(weights_mu[0]) = {len(weights_mu[0])}")
             exit()
 
         old_weights_sum = sum(old_weights)
@@ -182,16 +174,19 @@ class Algorithms:
         #     logger.debug(eta * (expert_gaines[i] + alg_gain))
 
         logger.debug(f"old_weights_mu_sum={old_weights_mu_sum}")
-        old_weights_mu = []
-        beta = 1 / time_step
+
+        alpha = 1 / (time_step + 1)
+        beta = [alpha, ]
+        beta.extend([0 for _ in range(time_step - 2)])
+        beta.append(1 - alpha)
+
         new_weights = []
         try:
             for i in range(shares_len):
-                old_weights_mu.append((old_weights[i] * exp(eta * (expert_gaines[i] + alg_gain))) / old_weights_mu_sum)
-                weights_mu[i].append(old_weights_mu[i])
-                new_weights.append(sum([beta * weights_mu[i][j] for j in range(time_step)]))
+                old_weights_mu = (old_weights[i] * exp(eta * (expert_gaines[i] + alg_gain))) / old_weights_mu_sum
+                new_weights.append(alpha / shares_len + (1 - alpha) * old_weights_mu)
 
-                logger.debug(f"old_weights_mu[i]={old_weights_mu[i]}, new_weights[i]={new_weights[i]}")
+                logger.debug(f"old_weights_mu={old_weights_mu}, new_weights[i]={new_weights[i]}")
 
         except OverflowError:
             logger.error(f"Слишком большое для экспоненты число: {eta * expert_gaines[len(new_weights)]}")
@@ -199,18 +194,16 @@ class Algorithms:
         except Exception:
             raise
 
-        mixgain = - 1 / eta * math.log(sum([old_weights[i] * exp(eta * expert_gaines[i]) for i in range(shares_len)]))
-        small_delta = alg_gain - mixgain
+        mixgain = 1 / eta * math.log(sum([old_weights[i] * exp(eta * expert_gaines[i]) for i in range(shares_len)]))
+        small_delta = mixgain - alg_gain
         new_big_delta = old_big_delta + small_delta
-        new_eta = 1 / new_big_delta
+        new_eta = math.log(shares_len) / new_big_delta
 
-        logger.debug(f"mixgain={mixgain}")
+        if mixgain < alg_gain:
+            logger.error(f"mixgain < alg_gain! mixgain={mixgain}, alg_gain={alg_gain}, time_step={time_step}")
+            exit()
 
-        # if mixgain > alg_gain:
-        #     logger.error(f"mixgain > alg_gain! mixgain={mixgain}, alg_gain={alg_gain}")
-        #     exit()
-
-        return new_weights, new_big_delta, new_eta, alg_gain, alg_gains_for_shares, weights_mu
+        return new_weights, new_big_delta, new_eta, alg_gain, alg_gains_for_shares
 
     @classmethod
     def fixed_share_with_constant_param(cls, old_weights: list, shares_len: int, expert_gains: list,
@@ -239,7 +232,7 @@ class Algorithms:
                 overridden_weight = old_weights[i] * exp(cls.ETA * expert_gains[i])
                 pool = sum([probability * overridden_weight for _ in range(shares_len)])
                 new_weights.append((1 - probability) * overridden_weight + 1 / (shares_len - 1) * (
-                            pool - probability * overridden_weight))
+                        pool - probability * overridden_weight))
 
         except OverflowError:
             logger.error(f"Слишком большое для экспоненты число: {- cls.ETA * expert_gains[len(new_weights)]}")

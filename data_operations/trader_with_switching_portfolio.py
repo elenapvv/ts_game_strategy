@@ -1,6 +1,5 @@
 import datetime
 import logging
-import math
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,24 +17,25 @@ logger = logging.getLogger(__name__)
 TO_SAVE_LOGS = True
 TO_SAVE_PLOTS = True
 
-# можем тут переопределить параметр эта
-Algorithms.ETA = 10000
-
 
 def get_eta_coef():
     return 0.95
 
 
-CASH = 1
+CASH = 10000
+
+# можем тут переопределить параметр эта
+Algorithms.ETA = 0.005
 # eta = 100  # должно быть бесконечность для conf_hedge, но питон не "вывозит" экспоненту  в большой степени
 eta = Algorithms.ETA
 
-# названия файлов и директорий
-subdir_name = '5 - old graphs (but gold)/'
+alpha = 0.3
 
-# filename = f'fixed share with constant param eta={eta} capital'
-filename = f'ConfHedge-1 (initial eta={eta}, eta=1 div delta) capital'
-# filename = f'Hedge with variable param (initial eta={eta}, eta=eta x {get_eta_coef()})'
+# названия файлов и директорий
+subdir_name = f'switching portfolio/3 - hedge with constant param without lkoh alpha={alpha}/'
+
+filename = f'hedge with constant param eta={eta}, alpha={alpha}'
+# filename = f'fixed share with variable param (initial eta={eta}, eta=ln N div delta)'
 
 logs_dir = f'../results/{subdir_name}'
 plots_dir = f'../plots/{subdir_name}'
@@ -76,31 +76,19 @@ def calculate_tickers_numbers(func_weights, func_step_shares, func_general_cash)
     return tickers_numbers
 
 
-def switching_portfolio(func_weights, func_step_shares, func_general_cash):
-    func_weights_sum = sum(func_weights)
-    tickers_numbers = []
-    remainder = 0
-
-    for ticker_idx in range(shares_num):
-        # сколько денег готовы выделить на текущую акцию
-        cash_on_ticker = func_general_cash * func_weights[ticker_idx] / func_weights_sum + remainder
-        tickers_number = int(cash_on_ticker / func_step_shares[ticker_idx])
-        tickers_numbers.append(tickers_number)
-
-        # сколько не использовано денег
-        remainder = cash_on_ticker - tickers_number * func_step_shares[ticker_idx]
-
-    return tickers_numbers
-
-
 if __name__ == '__main__':
+    exclude_share = 3
     columns = SharesDB.get_columns()
     if not columns:
         logger.error(f"Не удалось получить названия тикеров. Получено: {columns}")
         exit()
 
     columns = [column[3] for column in columns[2:]]
-    shares_num = len(columns)
+    if exclude_share:
+        time_step_shares = columns[:exclude_share] + columns[exclude_share + 1:]
+
+    shares_num = len(columns) - 1
+    general_cash_list = [CASH, ]
 
     weights = [1 / shares_num for _ in range(shares_num)]
     expert_gaines = [0 for _ in range(shares_num)]
@@ -109,19 +97,20 @@ if __name__ == '__main__':
     weights_mu = [[1 / shares_num, ] for _ in range(shares_num)]
 
     considered_date = MIN_DATE
-    old_time_step_shares = SharesDB.get_shares_by_date(date=considered_date)
-    # for share_idx, share in enumerate(old_time_step_shares):
-    #     if share > CASH:
-    #         logger.error("Выберите сумму побольше :)")
-    #         exit()
+    old_time_step_shares = SharesDB.get_shares_by_date(date=considered_date, exclude_share=exclude_share)
+    new_time_step_shares = old_time_step_shares
+    for share_idx, share in enumerate(old_time_step_shares):
+        if share > CASH:
+            logger.error("Выберите сумму побольше :)")
+            exit()
 
-    probability_step = 1 / (MAX_DATE - MIN_DATE).days
-    probability = 1 - probability_step
-    logger.info(f"probability_step={probability_step}")
+    # probability_step = 1 / (MAX_DATE - MIN_DATE).days
+    # probability = 1 - probability_step
+    # logger.info(f"probability_step={probability_step}")
 
-    number_of_share = 1 / shares_num  # int(CASH / sum(old_time_step_shares))  # для switching portfolio = 1 / shares_num
+    number_of_share = 1
     logger.info(f"Сначала покупаем по {number_of_share} тикера(-ов)")
-    number_of_shares = [number_of_share for _ in range(shares_num)]
+    number_of_shares = [1 for _ in range(shares_num)]
     considered_date = considered_date + datetime.timedelta(days=1)
     tickers_cash_lists = [[number_of_share * share, ] for share in old_time_step_shares]
     number_of_shares_lists = [[number_of_share, ] for _ in range(shares_num)]
@@ -133,30 +122,22 @@ if __name__ == '__main__':
     alg_gains_for_shares_list = [[number_of_share * weights[0], ] for _ in range(shares_num)]
     general_cash = 0
 
-    cash = CASH * shares_num
-    shares_cash_list = [[CASH, ] for _ in range(shares_num)]
-    general_cash_list = [cash, ]
-
-    logger.info(f"ETA={eta}")
+    logger.info(f"ETA={eta}, alpha={alpha}")
 
     bar = IncrementalBar('Выполнение...', max=(MAX_DATE - MIN_DATE).days)
 
     while considered_date < MAX_DATE:
         logger.debug(f"-----------------------Шаг {step}-------------------------")
 
-        new_time_step_shares = SharesDB.get_shares_by_date(date=considered_date)
-
-        # expert_gaines = [number_of_shares[share_idx] * (new_time_step_shares[share_idx] -
-        #                                                 old_time_step_shares[share_idx]) for share_idx
-        #                  in range(shares_num)]
-        expert_gaines = [np.log(new_time_step_shares[share_idx] / old_time_step_shares[share_idx]) for share_idx
+        expert_gaines = [number_of_shares[share_idx] * (new_time_step_shares[share_idx] -
+                                                        old_time_step_shares[share_idx]) for share_idx
                          in range(shares_num)]
         cumulative_expert_gaines = [cumulative_expert_gaines[share_idx] + expert_gaines[share_idx] for share_idx
                                     in range(shares_num)]
 
-        # alg_gains_for_shares, weights = Algorithms.hedge_with_constant_param(old_weights=weights,
-        #                                                                      shares_len=len(new_time_step_shares),
-        #                                                                      expert_gaines=expert_gaines)
+        alg_gains_for_shares, weights = Algorithms.hedge_with_constant_param(old_weights=weights,
+                                                                             shares_len=len(new_time_step_shares),
+                                                                             expert_gaines=expert_gaines)
 
         # alg_gains_for_shares, weights = Algorithms.hedge_with_variable_param(old_weights=weights,
         #                                                                      shares_len=len(new_time_step_shares),
@@ -164,14 +145,14 @@ if __name__ == '__main__':
         #                                                                      cumulative_expert_gaines=cumulative_expert_gaines,
         #                                                                      eta=eta)
 
-        weights, big_delta, eta, alg_gain, alg_gains_for_shares, weights_mu = Algorithms.conf_hedge(eta=eta,
-                                                                                                    time_step=step,
-                                                                                                    old_weights=weights,
-                                                                                                    shares_len=len(
-                                                                                                        new_time_step_shares),
-                                                                                                    expert_gaines=expert_gaines,
-                                                                                                    old_big_delta=big_delta,
-                                                                                                    weights_mu=weights_mu)
+        # weights, big_delta, eta, alg_gain, alg_gains_for_shares, weights_mu = Algorithms.conf_hedge(eta=eta,
+        #                                                                                             time_step=step,
+        #                                                                                             old_weights=weights,
+        #                                                                                             shares_len=len(
+        #                                                                                                 new_time_step_shares),
+        #                                                                                             expert_gaines=expert_gaines,
+        #                                                                                             old_big_delta=big_delta,
+        #                                                                                             weights_mu=weights_mu)
 
         # weights, big_delta, eta, alg_gain, alg_gains_for_shares = Algorithms.fixed_share_with_variable_param(eta=eta,
         #                                                                                                      time_step=step,
@@ -185,26 +166,36 @@ if __name__ == '__main__':
         #                                                                            shares_len=len(new_time_step_shares),
         #                                                                            expert_gains=expert_gaines,
         #                                                                            probability=probability)
-        #
-        # alg_gain = sum(alg_gains_for_shares)
+
+        old_time_step_shares = new_time_step_shares
+        new_time_step_shares = SharesDB.get_shares_by_date(date=considered_date, exclude_share=exclude_share)
+
+        scalar_product = np.dot(weights, new_time_step_shares)
+        weights = [weights[i] * new_time_step_shares[i] / scalar_product for i in range(shares_num)]
+        weights = [alpha / shares_num + (1 - alpha) * weight for weight in weights]
+
+        alg_gain = sum(alg_gains_for_shares)
         log_text = f"Выигрыш алгоритма Hedge на шаге {step} ({considered_date}): {alg_gain}"
         logger.debug(log_text)
         # logger.debug(f"big_delta={big_delta}, eta={eta}")
         # eta = eta * get_eta_coef()
         old_alg_gain = alg_gain
         cumulative_gain += alg_gain
-        # if TO_SAVE_LOGS:
-        #     with open(logs_filename, 'a+') as f:
-        #         f.write(f"{log_text}, денежный выигрыш: {cumulative_gain}, eta: {eta}, большая delta: {big_delta}\n")
+        if TO_SAVE_LOGS:
+            with open(logs_filename, 'a+') as f:
+                f.write(f"{log_text}, денежный выигрыш: {cumulative_gain}, eta: {eta}, большая delta: {big_delta}\n")
                 # f.write(f"{log_text}, всего: {cumulative_gain}, probability: {probability}\n")
         alg_gains.append(cumulative_gain)
         for share_idx in range(shares_num):
             alg_gains_for_shares_list[share_idx].append(
                 alg_gains_for_shares_list[share_idx][-1] + alg_gains_for_shares[share_idx])
 
-        probability -= probability_step
-        if probability <= probability_step:
-            logger.info(f"probability={probability}!")
+        # probability -= probability_step
+        # if probability <= probability_step:
+        #     logger.info(f"probability={probability}!")
+
+        considered_date = considered_date + datetime.timedelta(days=1)
+        step += 1
 
         # считаем, сколько купим акций, исходя из весов
         # general_cash = sum([number_of_shares[i] * old_time_step_shares[i] for i in range(len(old_time_step_shares))])
@@ -218,28 +209,6 @@ if __name__ == '__main__':
         # for share_idx in range(shares_num):
         #     number_of_shares_lists[share_idx].append(number_of_shares[share_idx])
 
-        weights_norm = sum([abs(weight) for weight in weights])
-        predicted_weights = [weight / weights_norm for weight in weights]
-
-        xs = [new_time_step_shares[share_idx] / old_time_step_shares[share_idx] for share_idx in range(shares_num)]
-
-        for share_idx in range(shares_num):
-            share_cash = shares_cash_list[share_idx][-1] * xs[share_idx]
-            shares_cash_list[share_idx].append(share_cash)
-
-        cash = cash * np.dot(predicted_weights, xs)
-        if math.isnan(cash):
-            logger.error(f"cash_inner==NaN, "
-                         f"np.dot(predicted_weights, xs)={np.dot(predicted_weights, xs)},"
-                         f"predicted_weights={predicted_weights}, xs={xs},"
-                         f"weights={weights}, weights_norm={weights_norm}")
-
-        general_cash_list.append(cash)
-
-        considered_date = considered_date + datetime.timedelta(days=1)
-        old_time_step_shares = new_time_step_shares
-        step += 1
-
         bar.next()
 
     bar.finish()
@@ -249,25 +218,20 @@ if __name__ == '__main__':
 
     if TO_SAVE_LOGS:
         with open(logs_filename, 'a+') as f:
-            f.write(
-                f"{log_text}, капитал - {cash}, для каждой котировки: {[shares_cash_inner[-1] for shares_cash_inner in shares_cash_list]}")
+            f.write(f"{log_text}, денежный выигрыш - {general_cash}")
             logger.info("Логи с результатами сохранены")
 
     if TO_SAVE_PLOTS:
-        # plt.plot(alg_gains, label="Для всех котировок")
-        plt.plot(general_cash_list, label="Для всех котировок")
+        plt.plot(alg_gains, label="Для всех котировок")
         for share_idx in range(shares_num):
-            plt.plot(shares_cash_list[share_idx], label=columns[share_idx])
+            plt.plot(alg_gains_for_shares_list[share_idx], label=columns[share_idx])
         plt.xlabel("Шаги")
         # plt.ylabel(f"Количество акций")
-        plt.ylabel(f"Капитал на каждом шаге")
-        # plt.ylabel(f"Выигрыш на каждом шаге")
         # plt.title(f"Изменение количества акций для ETA={Algorithms.ETA}")
+        plt.ylabel(f"Кумулятивный выигрыш для каждого шага")
         # plt.title(f"Fixed-Share с переменным параметром")
-        plt.title(f"Изменение капитала ConfHedge-1 с переменным параметром")
-        # plt.title(f"Hedge с переменным параметром")
+        plt.title(f"Hedge с постоянным параметром {Algorithms.ETA} при alpha={alpha}")
         plt.legend()
-        # plt.show()
         plt.savefig(plots_filename)
 
         logger.info("Графики с результатами сохранены")

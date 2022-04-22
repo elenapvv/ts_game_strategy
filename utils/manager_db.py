@@ -45,7 +45,7 @@ class SharesDB:
             return columns
 
     @classmethod
-    def get_shares_by_date(cls, date, shares_num):
+    def get_shares_by_date(cls, date, exclude_shares=None):
         time_step_shares = None
         with cursor_postgres() as cur:
             cur.execute(f'''SELECT * FROM {TABLE_NAME} WHERE date=%s''', (date,))
@@ -55,6 +55,10 @@ class SharesDB:
             logger.error(f"Не удалось получить тикеры для даты {date}. Получено: {time_step_shares}")
             exit()
 
-        time_step_shares = time_step_shares[-shares_num:]
+        time_step_shares = time_step_shares[2:]
+
+        if exclude_shares:
+            for exclude_share in exclude_shares:
+                time_step_shares = time_step_shares[:exclude_share] + time_step_shares[exclude_share + 1:]
 
         return time_step_shares
