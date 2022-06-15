@@ -135,7 +135,8 @@ class Algorithms:
         mixgain = 1 / eta * math.log(sum([old_weights[i] * exp(eta * expert_gaines[i]) for i in range(shares_len)]))
         small_delta = mixgain - alg_gain
         new_big_delta = old_big_delta + small_delta
-        new_eta = 1 / new_big_delta
+        new_eta = math.log(shares_len) / new_big_delta
+        # new_eta = 1 / new_big_delta
 
         if mixgain < alg_gain:
             logger.error(f"mixgain < alg_gain! mixgain={mixgain}, alg_gain={alg_gain}")
@@ -197,7 +198,7 @@ class Algorithms:
         mixgain = 1 / eta * math.log(sum([old_weights[i] * exp(eta * expert_gaines[i]) for i in range(shares_len)]))
         small_delta = mixgain - alg_gain
         new_big_delta = old_big_delta + small_delta
-        new_eta = math.log(shares_len) / new_big_delta
+        new_eta = 1 / new_big_delta
 
         if mixgain < alg_gain:
             logger.error(f"mixgain < alg_gain! mixgain={mixgain}, alg_gain={alg_gain}, time_step={time_step}")
